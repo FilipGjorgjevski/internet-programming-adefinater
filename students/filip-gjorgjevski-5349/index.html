@@ -6,58 +6,77 @@
     <title>Doctor Who Episodes Explorer</title>
     <link rel="stylesheet" href="styles.css">
     <style>
-        #episodes-table th {
-            cursor: pointer;
-            user-select: none;
-            outline: none;
+        /* Add some spacing for the new filters */
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
         }
-        #episodes-table th:focus {
-            box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.5);
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .filter-group label {
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        select, input[type="text"] {
+            padding: 8px;
+            border: 1px solid #ccc;
             border-radius: 4px;
         }
-        #episodes-body tr.focused {
-            background-color: #e8f0fe;
-        }
+
+        #episodes-table th { cursor: pointer; user-select: none; outline: none; }
+        #episodes-table th:focus { box-shadow: 0 0 0 3px rgba(244, 66, 185, 0.5); border-radius: 4px; }
+        #episodes-body tr.focused { background-color: #fee8f7; }
         #episodes-table th.sort-asc::after { content: ' ▲'; }
         #episodes-table th.sort-desc::after { content: ' ▼'; }
 
-        .warnings {
-            padding: 10px 15px;
-            margin-bottom: 15px;
-            background-color: #fffbe6;
-            border: 1px solid #ffe58f;
-            border-radius: 4px;
-            color: #d46b08;
-            font-weight: bold;
-        }
-        /* Style for the export button */
-        .export-button {
-            margin-left: 10px;
-            padding: 8px 12px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            background-color: #f7f7f7;
-            cursor: pointer;
-        }
-        .export-button:hover {
-            background-color: #e0e0e0;
-        }
+        .warnings { padding: 10px 15px; margin-bottom: 15px; background-color: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; color: #d46b08; font-weight: bold; }
+        .export-button { align-self: flex-end; margin-left: 10px; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; background-color: #f7f7f7; cursor: pointer; }
+        .export-button:hover { background-color: #e0e0e0; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Doctor Who Episodes Explorer</h1>
-            <p>Explore episodes through time and space</p>
+            <p>Filip Gjorgjevski 5349</p>
         </header>
 
+        <!-- ENHANCED FILTERS SECTION -->
         <section class="filters">
             <div class="filter-group">
-                <label for="name-filter">Search:</label>
-                <input type="text" id="name-filter" placeholder="Filter by Title, Doctor, Writer...">
-                <!-- Export to CSV button -->
-                <button id="export-csv" class="export-button">Export as CSV</button>
+                <label for="name-filter">Search Title, Writer, etc.</label>
+                <input type="text" id="name-filter" placeholder="e.g., Dalek, Moffat...">
             </div>
+            <div class="filter-group">
+                <label for="era-filter">Era</label>
+                <select id="era-filter">
+                    <option value="">All Eras</option>
+                    <option value="Classic">Classic</option>
+                    <option value="Modern">Modern</option>
+                    <option value="Recent">Recent</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="doctor-filter">Doctor</label>
+                <select id="doctor-filter">
+                    <option value="">All Doctors</option>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="companion-filter">Companion</label>
+                <select id="companion-filter">
+                    <option value="">All Companions</option>
+                    <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+            <button id="export-csv" class="export-button">Export as CSV</button>
         </section>
 
         <div id="validation-warnings" class="warnings" style="display: none;"></div>
@@ -65,7 +84,6 @@
         <main>
             <div id="loading" class="loading">Loading episodes...</div>
             <div id="error" class="error" style="display: none;"></div>
-
             <table id="episodes-table" style="display: none;">
                 <thead>
                     <tr>
@@ -83,13 +101,9 @@
                 </thead>
                 <tbody id="episodes-body"></tbody>
             </table>
-
-            <div id="no-results" class="no-results" style="display: none;">
-                No episodes match your search criteria.
-            </div>
+            <div id="no-results" class="no-results" style="display: none;"></div>
         </main>
     </div>
-
     <script src="script.js"></script>
 </body>
 </html>

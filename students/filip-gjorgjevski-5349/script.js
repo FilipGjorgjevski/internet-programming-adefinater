@@ -4,7 +4,7 @@
  * This vanilla JavaScript application fetches, displays, validates, and allows interaction
  * with a list of Doctor Who episodes. It features sorting, filtering, keyboard navigation,
  * data validation, and CSV export, all without external frameworks.
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 // --- CONFIGURATION ---
@@ -41,8 +41,11 @@ let state = {
         field: 'rank',
         ascending: true
     },
-    filters: {           // Stores the current filter values.
-        name: ''
+    filters: {           // Stores the current values for all active filters.
+        name: '',
+        era: '',
+        doctor: '',
+        companion: ''
     },
     focusedRowIndex: -1  // Index of the currently focused table row for keyboard navigation (-1 = none).
 };
@@ -62,9 +65,27 @@ document.addEventListener('DOMContentLoaded', async () => {
  * Attaches all necessary event listeners to the DOM.
  */
 function setupEventListeners() {
-    // Filter input for live searching.
-    document.getElementById('name-filter').addEventListener('input', (e) => {
+    // Text search filter for live searching.
+    document.getElementById('name-filter').addEventListener('input', e => {
         state.filters.name = e.target.value;
+        applyFiltersAndSort();
+    });
+
+    // Era dropdown filter.
+    document.getElementById('era-filter').addEventListener('change', e => {
+        state.filters.era = e.target.value;
+        applyFiltersAndSort();
+    });
+
+    // Doctor dropdown filter.
+    document.getElementById('doctor-filter').addEventListener('change', e => {
+        state.filters.doctor = e.target.value;
+        applyFiltersAndSort();
+    });
+
+    // Companion dropdown filter.
+    document.getElementById('companion-filter').addEventListener('change', e => {
+        state.filters.companion = e.target.value;
         applyFiltersAndSort();
     });
     
@@ -94,7 +115,7 @@ function setupEventListeners() {
 // --- DATA HANDLING ---
 
 /**
- * Fetches, combines, and validates episode data from all sources in CONFIG.DATA_URLS.
+ * Fetches, combines, validates, and populates filters from the episode data.
  * Uses try-catch for robust error handling of network failures or invalid JSON.
  */
 async function loadEpisodes() {
@@ -124,6 +145,7 @@ async function loadEpisodes() {
         }
 
         state.episodes = allEpisodes;
+        populateFilterDropdowns(allEpisodes); // Populate dynamic filters from the data.
         applyFiltersAndSort(); // Perform initial sort and display.
     } catch (error) {
         // Catch any error from fetching, parsing, or validation.
@@ -131,6 +153,33 @@ async function loadEpisodes() {
     } finally {
         showLoading(false);
     }
+}
+
+/**
+ * Populates Doctor and Companion dropdowns with unique, sorted values from the dataset.
+ * @param {object[]} episodes - The array of all episodes.
+ */
+function populateFilterDropdowns(episodes) {
+    const doctorSelect = document.getElementById('doctor-filter');
+    const companionSelect = document.getElementById('companion-filter');
+
+    // Use Sets to automatically handle uniqueness.
+    const uniqueDoctors = new Set();
+    const uniqueCompanions = new Set();
+
+    episodes.forEach(episode => {
+        if (episode.doctor?.actor) uniqueDoctors.add(episode.doctor.actor);
+        if (episode.companion?.actor) uniqueCompanions.add(episode.companion.actor);
+    });
+
+    // Sort alphabetically and create option elements.
+    Array.from(uniqueDoctors).sort().forEach(actor => {
+        doctorSelect.add(new Option(actor, actor));
+    });
+
+    Array.from(uniqueCompanions).sort().forEach(actor => {
+        companionSelect.add(new Option(actor, actor));
+    });
 }
 
 /**
@@ -146,33 +195,15 @@ function validateData(episodes) {
 
     episodes.forEach((episode, index) => {
         const id = `Episode "${episode.title || `(Untitled at index ${index}`})"`;
-
-        // Validation 1: Check for missing required fields.
         requiredFields.forEach(field => {
-            if (episode[field] == null || episode[field] === '') {
-                warnings.push(`Validation Error: ${id} is missing required field '${field}'.`);
-            }
+            if (episode[field] == null || episode[field] === '') warnings.push(`Validation Error: ${id} is missing required field '${field}'.`);
         });
-
-        // Validation 2: Check for future broadcast dates.
         const date = normalizeDate(episode.broadcast_date);
-        if (date && date > now) {
-            warnings.push(`Validation Error: ${id} has a future broadcast date.`);
-        }
-        
-        // Validation 3: Check for invalid or duplicate ranks.
-        if (typeof episode.rank !== 'number' || !isFinite(episode.rank)) {
-            warnings.push(`Validation Error: ${id} has an invalid (non-numeric) rank.`);
-        } else if (seenRanks.has(episode.rank)) {
-            warnings.push(`Validation Error: Duplicate rank '${episode.rank}' found on ${id}.`);
-        } else {
-            seenRanks.add(episode.rank);
-        }
-
-        // Validation 4: Check for negative series numbers.
-        if (typeof episode.series === 'number' && episode.series < 0) {
-            warnings.push(`Validation Error: ${id} has a negative series number.`);
-        }
+        if (date && date > now) warnings.push(`Validation Error: ${id} has a future broadcast date.`);
+        if (typeof episode.rank !== 'number' || !isFinite(episode.rank)) warnings.push(`Validation Error: ${id} has an invalid (non-numeric) rank.`);
+        else if (seenRanks.has(episode.rank)) warnings.push(`Validation Error: Duplicate rank '${episode.rank}' found on ${id}.`);
+        else seenRanks.add(episode.rank);
+        if (typeof episode.series === 'number' && episode.series < 0) warnings.push(`Validation Error: ${id} has a negative series number.`);
     });
     return warnings;
 }
@@ -180,23 +211,31 @@ function validateData(episodes) {
 // --- CORE LOGIC ---
 
 /**
- * Applies the current filters and sorting to the master episode list and triggers a re-render.
+ * Applies all active filters (text and dropdowns) and sorting to the master episode list, then triggers a re-render.
  */
 function applyFiltersAndSort() {
     state.focusedRowIndex = -1; // Reset keyboard focus when data is re-rendered.
-    const filterText = state.filters.name.toLowerCase();
+    const { name, era, doctor, companion } = state.filters;
+    const filterText = name.toLowerCase();
     
     let processedData = state.episodes.filter(ep => {
-        // Edge Case Handling: Use optional chaining (?.) and nullish coalescing (??)
-        // to prevent errors if fields are missing in some data entries.
-        const title = ep.title?.toLowerCase() ?? '';
-        const doctor = formatDoctor(ep.doctor, false).toLowerCase();
-        const companion = formatCompanion(ep.companion, false).toLowerCase();
-        const writer = ep.writer?.toLowerCase() ?? '';
-        const director = ep.director?.toLowerCase() ?? '';
-        return title.includes(filterText) || doctor.includes(filterText) || companion.includes(filterText) || writer.includes(filterText) || director.includes(filterText);
+        // Dropdown Filters: Check for an exact match or if the filter is not set.
+        const eraMatch = !era || ep.era === era;
+        const doctorMatch = !doctor || ep.doctor?.actor === doctor;
+        const companionMatch = !companion || ep.companion?.actor === companion;
+
+        // Text Search Filter: Check for a partial match in several text-based fields.
+        const textMatch = !filterText || (
+            (ep.title?.toLowerCase() ?? '').includes(filterText) ||
+            (ep.writer?.toLowerCase() ?? '').includes(filterText) ||
+            (ep.director?.toLowerCase() ?? '').includes(filterText)
+        );
+
+        // An episode is included only if it matches all active filters.
+        return eraMatch && doctorMatch && companionMatch && textMatch;
     });
 
+    // Apply sorting to the filtered data.
     const { field, ascending } = state.sort;
     const direction = ascending ? 1 : -1;
     processedData.sort((a, b) => {
@@ -214,23 +253,17 @@ function applyFiltersAndSort() {
  * @param {KeyboardEvent} e - The keyboard event object.
  */
 function handleKeyboardNavigation(e) {
-    // Allow sorting a column by focusing it with Tab and pressing Enter.
     if (e.key === 'Enter' && document.activeElement.tagName === 'TH') {
         e.preventDefault();
-        document.activeElement.click(); // Simulate a click to trigger sorting.
+        document.activeElement.click();
     }
-
-    // Allow navigating table rows with arrow keys.
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const direction = e.key === 'ArrowDown' ? 1 : -1;
         const numRows = state.filtered.length;
         if (numRows === 0) return;
-
-        // Clamp the index to stay within the bounds of the table.
         const newIndex = state.focusedRowIndex + direction;
         state.focusedRowIndex = Math.max(0, Math.min(numRows - 1, newIndex));
-        
         updateRowFocus();
     }
 }
@@ -240,24 +273,18 @@ function handleKeyboardNavigation(e) {
  */
 function exportToCSV() {
     const headers = ["Rank", "Title", "Series", "Era", "Year", "Director", "Writer", "Doctor", "Companion", "Cast Count"];
-    
-    // Map the filtered data to the desired CSV row format.
     const dataRows = state.filtered.map(ep => [
         ep.rank, ep.title, ep.series, ep.era,
         getYear(ep.broadcast_date),
         ep.director, ep.writer,
         formatDoctor(ep.doctor),
         formatCompanion(ep.companion),
-        ep.cast?.length || 0 // Edge Case Handling: Handles null or empty cast arrays.
+        ep.cast?.length || 0
     ]);
-
-    // Construct the CSV content, escaping each value.
     const csvContent = [
         headers.map(escapeCSV).join(','),
         ...dataRows.map(row => row.map(escapeCSV).join(','))
     ].join('\n');
-
-    // Trigger a file download using a Blob.
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -275,43 +302,36 @@ function exportToCSV() {
  */
 function displayEpisodes(episodes) {
     const tableBody = document.getElementById('episodes-body');
-    tableBody.innerHTML = ''; // Clear previous results.
+    tableBody.innerHTML = '';
     updateSortHeaders();
     document.getElementById('no-results').style.display = episodes.length === 0 ? 'block' : 'none';
 
     episodes.forEach((episode, index) => {
         const row = tableBody.insertRow();
-        
-        // Helper to create and append a cell.
-        // Edge Case Handling: Using `textContent` instead of `innerHTML` is a security best practice
-        // to prevent XSS attacks and correctly renders special characters in titles (e.g., "<Doctor>").
         const createCell = text => {
             const cell = row.insertCell();
-            cell.textContent = text ?? 'N/A'; // Gracefully handle any null/undefined values.
+            cell.textContent = text ?? 'N/A';
         };
-
-        // Create a cell for each piece of data.
         createCell(episode.rank);
         createCell(episode.title);
         createCell(episode.series);
         createCell(episode.era);
         createCell(getYear(episode.broadcast_date));
         createCell(episode.director);
-        createCell(episode.writer); // Edge Case Handling: Multiple writers are typically a single string, so this displays them correctly.
+        createCell(episode.writer);
         createCell(formatDoctor(episode.doctor));
-        createCell(formatCompanion(episode.companion)); // Edge Case Handling: Handles missing companion data via its formatter.
-        createCell(episode.cast?.length || 0); // Edge Case Handling: Correctly shows 0 for empty or missing cast arrays.
-
+        createCell(formatCompanion(episode.companion));
+        createCell(episode.cast?.length || 0);
         row.addEventListener('click', () => {
             state.focusedRowIndex = index;
             updateRowFocus();
         });
     });
-    updateRowFocus(); // Apply focus style if needed.
+    updateRowFocus();
 }
 
 /**
- * Updates the visual indicators (▲/▼) on table headers to show the current sort column and direction.
+ * Updates the visual indicators (▲/▼) on table headers.
  */
 function updateSortHeaders() {
     document.querySelectorAll('#episodes-table thead th').forEach(th => {
@@ -330,7 +350,6 @@ function updateRowFocus() {
     for (let i = 0; i < rows.length; i++) {
         rows[i].classList.toggle('focused', i === state.focusedRowIndex);
         if (i === state.focusedRowIndex) {
-            // Ensure the focused row is visible on screen.
             rows[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
     }
@@ -340,7 +359,6 @@ function updateRowFocus() {
 
 /**
  * Gets a comparable value from an episode object for a given sort field.
- * Handles complex fields like dates and nested objects.
  * @param {object} ep - The episode object.
  * @param {string} field - The field to get the value for.
  * @returns {string|number} A value that can be sorted.
@@ -357,13 +375,11 @@ function getSortValue(ep, field) {
 
 /**
  * Escapes a string for use in a CSV file according to RFC 4180.
- * Wraps strings containing commas or quotes in double quotes.
- * Escapes existing double quotes by doubling them.
  * @param {*} value - The value to escape.
  * @returns {string} The CSV-safe string.
  */
 function escapeCSV(value) {
-    const stringValue = String(value ?? ''); // Handle null/undefined.
+    const stringValue = String(value ?? '');
     if (/[",\n]/.test(stringValue)) {
         return `"${stringValue.replace(/"/g, '""')}"`;
     }
@@ -372,25 +388,21 @@ function escapeCSV(value) {
 
 /**
  * Parses a date string from various possible formats into a Date object.
- * @param {string} dateStr - The date string to parse (e.g., "YYYY-MM-DD", "DD/MM/YYYY", "YYYY").
+ * @param {string} dateStr - The date string to parse (e.g., "YYYY-MM-DD", "DD/MM/YYYY").
  * @returns {Date|null} A Date object, or null if parsing fails.
  */
 function normalizeDate(dateStr) {
     if (!dateStr) return null;
-    // Edge Case Handling: Tries multiple formats for robust date parsing.
-    if (/^\d{4}$/.test(dateStr)) return new Date(dateStr, 0, 1); // "YYYY"
-    if (dateStr.includes('/')) { // "DD/MM/YYYY"
-        const [d, m, y] = dateStr.split('/');
-        return new Date(y, m - 1, d);
-    }
-    const date = new Date(dateStr); // "YYYY-MM-DD" and "Month Day Year"
+    if (/^\d{4}$/.test(dateStr)) return new Date(dateStr, 0, 1);
+    if (dateStr.includes('/')) { const [d, m, y] = dateStr.split('/'); return new Date(y, m - 1, d); }
+    const date = new Date(dateStr);
     return isNaN(date.getTime()) ? null : date;
 }
 
 /**
  * Formats the doctor object for display.
  * @param {object} d - The doctor object.
- * @param {boolean} includeInc - Whether to include the incarnation in parentheses.
+ * @param {boolean} includeInc - Whether to include the incarnation.
  * @returns {string} The formatted string, or "N/A".
  */
 function formatDoctor(d, includeInc = true) {
@@ -401,16 +413,16 @@ function formatDoctor(d, includeInc = true) {
 /**
  * Formats the companion object for display. Handles null/missing companion data.
  * @param {object} c - The companion object.
- * @param {boolean} includeChar - Whether to include the character name in parentheses.
+ * @param {boolean} includeChar - Whether to include the character name.
  * @returns {string} The formatted string, or "N/A".
  */
 function formatCompanion(c, includeChar = true) {
-    if (!c?.actor) return 'N/A'; // Edge Case: Handles missing companion data.
+    if (!c?.actor) return 'N/A';
     return includeChar ? `${c.actor} (${c.character || 'N/A'})` : c.actor;
 }
 
 /**
- * Extracts the year from a date string using the robust normalizeDate function.
+ * Extracts the year from a date string.
  * @param {string} dateStr - The date string.
  * @returns {number|string} The four-digit year, or "N/A".
  */
@@ -421,7 +433,7 @@ function getYear(dateStr) {
 
 /**
  * Shows or hides the loading indicator and main content.
- * @param {boolean} isLoading - If true, shows the loading spinner; otherwise, shows the table.
+ * @param {boolean} isLoading - If true, shows the loading spinner.
  */
 function showLoading(isLoading) {
     document.getElementById('loading').style.display = isLoading ? 'block' : 'none';
@@ -438,7 +450,6 @@ function showError(details) {
     const userMessage = "Error: Could not load episodes. Please check your network connection and try again.";
     errorElement.textContent = `${userMessage}\nDetails: ${details}`;
     errorElement.style.display = 'block';
-    // Hide other elements on critical error.
     document.getElementById('episodes-table').style.display = 'none';
     document.getElementById('loading').style.display = 'none';
 }
