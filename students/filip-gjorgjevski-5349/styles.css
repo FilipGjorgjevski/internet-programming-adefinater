@@ -29,7 +29,7 @@ header {
 }
 
 header h1 {
-    color: #2a5298;
+    color: #982a84;
     margin-bottom: 10px;
 }
 
@@ -73,7 +73,7 @@ th, td {
 }
 
 th {
-    background: #2a5298;
+    background: #982a84;
     color: white;
     font-weight: 500;
     cursor: pointer;
